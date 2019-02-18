@@ -374,6 +374,47 @@ class ColaProcessor(DataProcessor):
     return examples
 
 
+class TweetProcessor(DataProcessor):
+  """Processor for the Turkish tweet data set."""
+
+  def get_train_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
+
+  def get_dev_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
+
+  def get_test_examples(self, data_dir):
+    """See base class."""
+    return self._create_examples(
+        self._read_tsv(os.path.join(data_dir, "test.tsv")), "test")
+
+  def get_labels(self):
+    """See base class. 9 different topic for tweets."""
+    return ["0", "1", "2", "3", "4", "5", "6", "7", "8"]
+
+  def _create_examples(self, lines, set_type):
+    """Creates examples for the training and dev sets."""
+    examples = []
+    for (i, line) in enumerate(lines):
+      # Only the test set has a header
+      if set_type == "test" and i == 0:
+        continue
+      guid = "%s-%s" % (set_type, i)
+      if set_type == "test":
+        text_a = tokenization.convert_to_unicode(line[1])
+        label = "0"
+      else:
+        text_a = tokenization.convert_to_unicode(line[3])
+        label = tokenization.convert_to_unicode(line[1])
+      examples.append(
+          InputExample(guid=None, text_a=text_a, text_b=None, label=label))
+    return examples
+
+
 def convert_single_example(ex_index, example, label_list, max_seq_length,
                            tokenizer):
   """Converts a single `InputExample` into a single `InputFeatures`."""
@@ -685,10 +726,19 @@ def model_fn_builder(bert_config, num_labels, init_checkpoint, learning_rate,
         predictions = tf.argmax(logits, axis=-1, output_type=tf.int32)
         accuracy = tf.metrics.accuracy(
             labels=label_ids, predictions=predictions, weights=is_real_example)
+        precision = tf.metrics.precision(
+            labels=label_ids, predictions=predictions, weights=is_real_example)
+        recall = tf.metrics.recall(
+            labels=label_ids, predictions=predictions, weights=is_real_example)
+        f1_score = tf.contrib.metrics.f1_score(
+            labels=label_ids, predictions=predictions, weights=is_real_example)
         loss = tf.metrics.mean(values=per_example_loss, weights=is_real_example)
         return {
             "eval_accuracy": accuracy,
-            "eval_loss": loss,
+            "eval_precision": precision,
+            "eval_recall": recall,
+            "eval_f1_score": f1_score,
+            "eval_loss": loss
         }
 
       eval_metrics = (metric_fn,
@@ -788,6 +838,7 @@ def main(_):
       "mnli": MnliProcessor,
       "mrpc": MrpcProcessor,
       "xnli": XnliProcessor,
+      "tweet": TweetProcessor,
   }
 
   tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
